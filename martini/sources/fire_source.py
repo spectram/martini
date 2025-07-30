@@ -124,7 +124,7 @@ class FIRESource(SPHSource):
         import gizmo_analysis as gizmo
 
         gizmo_read_kwargs = dict(
-            species=["gas", "star"],
+            species=["gas"],
             properties=[
                 "position",
                 "velocity",
@@ -133,8 +133,9 @@ class FIRESource(SPHSource):
                 "density",
                 "mass",
                 "potential",
-                "massfraction.metals.hydrogen",
+                "massfraction.hydrogen",
                 "hydrogen.neutral.fraction",
+                "metallicity.metals",
             ],
             simulation_directory=simulation_directory,
             snapshot_value_kind=snapshot[0],
@@ -149,6 +150,27 @@ class FIRESource(SPHSource):
         gizmo_snap = gizmo.io.Read.read_snapshots(
             **gizmo_read_kwargs,
         )
+        X_H = gizmo_snap["gas"].prop("massfraction.hydrogen")
+        f_nH = gizmo_snap["gas"].prop("hydrogen.neutral.fraction")
+        NH_mass = gizmo_snap["gas"].prop("mass") * X_H * f_nH
+        T_g = gizmo_snap["gas"].prop("temperature")
+        rho = gizmo_snap["gas"].prop("density") # Msun/kpc^3
+        d = gizmo_snap['gas'].prop('size') # kpc
+        Z = 10**gizmo_snap['gas'].prop('metallicity.metals') # [X/H]/[X/H]_solar - convention in gizmo_analysis
+        neutral_mask = (f_nH > 0) & (T_g <= 1e5) & (NH_mass >= 0.1) # Threshold to avoid very low mass particles
+        NH_mass = np.where(neutral_mask==1, NH_mass, 0)
+        # KMT model for H2
+        del_rho  = np.abs(np.gradient(rho)) # Msun/kpc^4
+        del_rho = np.maximum(del_rho, 1e-10)  # Prevent division by zero
+        Sigma =  rho * (d * (rho/del_rho)) * U.Msun / U.kpc**2  # Msun/kpc^2 - gas mass surface density following Sobolev-length approximation
+        tau = 434.8 * Sigma.to(U.g/U.cm**2).value * (0.1+Z) # dust optical depth - Feldmann+2023 - https://doi.org/10.1093/mnras/stad1205
+        tau = np.maximum(tau, 1e-10)  # Prevent division by zero
+        chi = 3.1 * ((1 + 3.1 * Z**(0.365))/4.1) # Scaled UV field
+        s = np.log((1+0.6*chi + 0.01*chi**2))/(0.6*tau)
+        f_H2 =1 - (3/4) * (s/(1+0.25*s))
+        molecular_mask = neutral_mask & (T_g <= 1e4) & (NH_mass*f_H2 >= 0.1) # Threshold to avoid very low mass H_2 particles
+        f_H2 = np.where(molecular_mask==1, f_H2, 0)
+        f_HI = np.where(neutral_mask==1,(1 - f_H2),0)
         particles = dict(
             xyz_g=(
                 gizmo_snap["gas"]["position"]
@@ -162,22 +184,9 @@ class FIRESource(SPHSource):
             )
             * U.km
             * U.s**-1,
-            T_g=gizmo_snap["gas"]["temperature"] * U.K,
-            # see doi:10.1093/mnras/sty1241 Appendix B for molecular partition:
-            mHI_g=np.where(
-                np.logical_and(
-                    gizmo_snap["gas"]["temperature"] * U.K < 300 * U.K,
-                    gizmo_snap["gas"]["density"] * U.Msun * U.kpc**-3
-                    > C.m_p * 10 * U.cm**-3,
-                ),
-                0,
-                gizmo_snap["gas"].prop("mass.hydrogen.neutral"),
-            )
-            * U.Msun,
-            # per A. Wetzel, size / 0.5077 is radius of cpmpact support
-            hsm_g=gizmo_snap["gas"]["size"]
-            / 0.5077
-            * U.kpc
+            T_g=T_g * U.K,
+            mHI_g= NH_mass * f_HI * U.Msun,
+            hsm_g=gizmo_snap["gas"]["size"] * U.kpc # gizmo_analysis processes the smoothing length to get radius of compact support
             * find_fwhm(_CubicSplineKernel().kernel),
         )
         super().__init__(
