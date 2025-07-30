@@ -159,7 +159,7 @@ class FIRESource(SPHSource):
         Z = 10**gizmo_snap['gas'].prop('metallicity.metals') # [X/H]/[X/H]_solar - convention in gizmo_analysis
         neutral_mask = (f_nH > 0) & (T_g <= 1e5) & (NH_mass >= 0.1) # Threshold to avoid very low mass particles
         NH_mass = np.where(neutral_mask==1, NH_mass, 0)
-        # KMT model for H2
+        # KMT model for H2 -  Krumholz & Gnedin 2011 DOI:10.1088/0004-637X/729/1/36
         del_rho  = np.abs(np.gradient(rho)) # Msun/kpc^4
         del_rho = np.maximum(del_rho, 1e-10)  # Prevent division by zero
         Sigma =  rho * (d * (rho/del_rho)) * U.Msun / U.kpc**2  # Msun/kpc^2 - gas mass surface density following Sobolev-length approximation
