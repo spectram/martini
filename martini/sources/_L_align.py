@@ -98,8 +98,8 @@ def L_align(xyz, vxyz, m, frac=0.3, saverot=None, Laxis="z"):
     else:
         raise ValueError("L_align: Laxis must be one of 'x', 'y' or 'z'.")
 
-    if transposed:
-        rotmat = rotmat.T
+    # if transposed:
+    #     rotmat = rotmat.T
     if saverot is not None:
         np.save(saverot, rotmat)
 
