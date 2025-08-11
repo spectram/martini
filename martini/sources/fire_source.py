@@ -186,7 +186,10 @@ class FIRESource(SPHSource):
             * U.s**-1,
             T_g=T_g * U.K,
             mHI_g= NH_mass * f_HI * U.Msun,
-            hsm_g=gizmo_snap["gas"]["size"] * U.kpc # gizmo_analysis processes the smoothing length to get radius of compact support
+            # per A. Wetzel, size / 0.5077 is radius of cpmpact support
+            hsm_g=gizmo_snap["gas"]["size"]
+            / 0.5077
+            * U.kpc
             * find_fwhm(_CubicSplineKernel().kernel),
         )
         super().__init__(
